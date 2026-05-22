@@ -4,6 +4,7 @@ import logging
 from openai import OpenAI
 import yt_dlp
 from dotenv import load_dotenv
+from .audio_utils import split_audio_file
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
@@ -59,12 +60,33 @@ def download_video_audio(url: str):
 
 
 def transcribe_mp3_file(filename: str) -> str:
-    with open(filename, "rb") as audio_file:
-        transcription = client.audio.transcriptions.create(
-            model="whisper-1",
-            file=audio_file,
-        )
-    return transcription.text
+    try:
+        # Split file into chunks if necessary
+        chunk_files = split_audio_file(filename)
+        
+        # Transcribe each chunk
+        transcriptions = []
+        for chunk_file in chunk_files:
+            with open(chunk_file, "rb") as audio_file:
+                transcription = client.audio.transcriptions.create(
+                    model="whisper-1",
+                    file=audio_file,
+                )
+                transcriptions.append(transcription.text)
+            
+            # Clean up chunk file if it's not the original
+            if chunk_file != filename:
+                try:
+                    os.remove(chunk_file)
+                except Exception as e:
+                    logger.warning(f"Failed to clean up chunk file {chunk_file}: {str(e)}")
+        
+        # Combine transcriptions
+        return " ".join(transcriptions)
+        
+    except Exception as e:
+        logger.error(f"Error transcribing audio: {str(e)}")
+        raise
 
 
 def ask_gpt_for_summary(transcript: str, url: str) -> str:
